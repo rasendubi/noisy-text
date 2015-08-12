@@ -1,5 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
+import Control.Monad (forM_)
 import Control.Applicative ( (<$>) )
 import Data.Char (toLower)
 import Data.List (union)
@@ -14,8 +15,11 @@ import Data.Text.Lazy.Encoding -- (decodeUtf8)
 import qualified Data.HashSet as HS
 import qualified Data.Map.Strict as M
 
-import qualified Data.Aeson as A (decode')
+import qualified Data.Aeson as A (decode', encode)
 import Data.Aeson.TH
+
+import           Data.CaseInsensitive ( CI )
+import qualified Data.CaseInsensitive as CI
 
 data Tweet = Tweet
     { tTid   :: {-# UNPACK #-}!T.Text
@@ -32,34 +36,40 @@ deriveJSON defaultOptions{fieldLabelModifier = fmap toLower . drop 1} ''Tweet
 getTweets :: FilePath -> IO (Maybe [Tweet])
 getTweets path = A.decode' <$> BL.readFile path
 
-loadDictionary :: FilePath -> IO (HS.HashSet T.Text)
-loadDictionary path = HS.fromList . fmap TL.toStrict . TL.lines . TL.map toLower . decodeLatin1 <$> BL.readFile path
+loadDictionary :: FilePath -> IO (HS.HashSet (CI T.Text))
+loadDictionary path = HS.fromList . fmap (CI.mk . TL.toStrict) . TL.lines . decodeLatin1 <$> BL.readFile path
 
-emnlpCorrectionDictionary :: FilePath -> IO (M.Map T.Text [T.Text])
-emnlpCorrectionDictionary path = M.fromList . fmap (toPairs . T.words . TL.toStrict) . TL.lines . TL.map toLower . decodeUtf8 <$> BL.readFile path
-    where toPairs (x:xs) = (x, xs)
+emnlpCorrectionDictionary :: FilePath -> IO (M.Map (CI T.Text) [T.Text])
+emnlpCorrectionDictionary path = M.fromList . fmap (toPairs . T.words . TL.toStrict) . TL.lines . decodeUtf8 <$> BL.readFile path
+    where toPairs (x:xs) = (CI.mk x, xs)
 
-utdallasCorrectionDictionary :: FilePath -> IO (M.Map T.Text [T.Text])
-utdallasCorrectionDictionary path = M.fromList . fmap (toPairs . T.words . TL.toStrict) . TL.lines . TL.map toLower . decodeUtf8 <$> BL.readFile path
+utdallasCorrectionDictionary :: FilePath -> IO (M.Map (CI T.Text) [T.Text])
+utdallasCorrectionDictionary path = M.fromList . fmap (toPairs . T.words . TL.toStrict) . TL.lines . decodeUtf8 <$> BL.readFile path
     where
-        toPairs :: [T.Text] -> (T.Text, [T.Text])
-        toPairs (_:word:xs) = (word, filter (/= "|") xs)
+        toPairs :: [T.Text] -> (CI T.Text, [T.Text])
+        toPairs (_:word:xs) = (CI.mk word, filter (/= "|") xs)
 
-unionCorrDicts :: M.Map T.Text [T.Text] -> M.Map T.Text [T.Text] -> M.Map T.Text [T.Text]
+unionCorrDicts :: M.Map (CI T.Text) [T.Text] -> M.Map (CI T.Text) [T.Text] -> M.Map (CI T.Text) [T.Text]
 unionCorrDicts = M.unionWith Data.List.union
 
 main = do
     Just tweets <- getTweets "data/test_data_20150430.json"
     dict <- loadDictionary "data/scowl.american.70"
-    let check = flip HS.member dict
 
     emnlp <- emnlpCorrectionDictionary "data/emnlp_dict.txt"
     utdallas <- utdallasCorrectionDictionary "data/utdallas.txt"
+
     let correctionDictionary = unionCorrDicts emnlp utdallas
+
+    let check x = HS.member (CI.mk x) dict
+    let checkCorrection x = M.lookup (CI.mk x) correctionDictionary
 
     -- let first = head tweets
     -- print first
-    print $ fmap (fmap ((\x -> (x, check x, M.lookup x correctionDictionary)) . T.map toLower) . tInput) tweets
+    let result = fmap (fmap (\x -> (x, check x, checkCorrection x)) . tInput) tweets
+    forM_ result $ \x -> print x >> putStrLn ""
+
+    BL.writeFile "output.json" $ A.encode result
 
 -- import Data.Binary (decodeFile)
 -- import Codec.Archive.Zip
