@@ -1,7 +1,10 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
-import Control.Monad (forM_)
 import Control.Applicative ( (<$>), (<*>) )
+import Control.Monad (forM_)
+
+import System.IO.Unsafe (unsafePerformIO)
+
 import Data.Char (toLower)
 import Data.List (union)
 
@@ -10,11 +13,13 @@ import qualified Data.ByteString.Lazy.Char8 as BL
 
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as TL
-import Data.Text.Lazy.Encoding (decodeUtf8, decodeLatin1)
+import qualified Data.Text.Lazy.Encoding as TL (decodeUtf8, decodeLatin1)
 
+import Data.Hashable (Hashable)
 import qualified Data.HashSet as HS
-import qualified Data.Map.Strict as M
+import qualified Data.HashMap.Strict as HM
 
+import           Data.Aeson as JSON (ToJSON(toJSON))
 import qualified Data.Aeson as JSON (decode', encode)
 import Data.Aeson.TH (deriveJSON, defaultOptions, fieldLabelModifier)
 
@@ -31,36 +36,56 @@ data Tweet = Tweet
 deriveJSON defaultOptions{fieldLabelModifier = fmap toLower . drop 1} ''Tweet
 
 type Vocabulary = HS.HashSet (CI T.Text)
-type CorrectionDictionary = M.Map (CI T.Text) [T.Text]
+type CorrectionDictionary = HM.HashMap (CI T.Text) (HS.HashSet T.Text)
 
+-- | WordSuggestion is function from word to hash map of suggested words
+-- where value is a probability.
+type WordSuggestion = T.Text -> HM.HashMap T.Text Double
+
+suggestions :: HM.HashMap T.Text WordSuggestion
+suggestions = HM.fromList
+    [ ("oov",  oovSuggest)
+    , ("corr", corrSuggest)
+    ]
+
+main :: IO ()
 main = do
     Just tweets <- getTweets "data/test_data_20150430.json"
-    vocabulary <- loadVocabulary "data/scowl.american.70"
-    correctionDictionary <- buildCorrectionDictionary
+    let result = fmap (fmap (\x -> (x, fmap ($ x) suggestions)) . tInput) tweets
+    BL.putStrLn $ JSON.encode result
 
-    let checkOOV x = HS.member (CI.mk x) vocabulary
-    let checkCorrection x = M.lookup (CI.mk x) correctionDictionary
+vocabulary :: Vocabulary
+vocabulary = unsafePerformIO $ loadVocabulary "data/scowl.american.70"
+{-# NOINLINE vocabulary #-}
 
-    let result = fmap (fmap (\x -> (x, checkOOV x, checkCorrection x)) . tInput) tweets
-    forM_ result $ \x -> print x >> putStrLn ""
+oovSuggest :: WordSuggestion
+oovSuggest x
+    | HS.member (CI.mk x) vocabulary = HM.singleton x 1
+    | otherwise                      = HM.empty
 
-    BL.writeFile "output.json" $ JSON.encode result
+
+corrSuggest :: WordSuggestion
+corrSuggest x = mapHashSet (const 1) $ HM.lookupDefault HS.empty (CI.mk x) correctionDictionary
+    where
+        correctionDictionary :: CorrectionDictionary
+        correctionDictionary = unsafePerformIO $ HM.unionWith HS.union
+            <$> emnlpCorrectionDictionary "data/emnlp_dict.txt"
+            <*> utdallasCorrectionDictionary "data/utdallas.txt"
+        {-# NOINLINE correctionDictionary #-}
 
 getTweets :: FilePath -> IO (Maybe [Tweet])
 getTweets path = JSON.decode' <$> BL.readFile path
 
 loadVocabulary :: FilePath -> IO Vocabulary
-loadVocabulary path = HS.fromList . fmap (CI.mk . TL.toStrict) . TL.lines . decodeLatin1 <$> BL.readFile path
-
-buildCorrectionDictionary :: IO CorrectionDictionary
-buildCorrectionDictionary = M.unionWith Data.List.union
-    <$> emnlpCorrectionDictionary "data/emnlp_dict.txt"
-    <*> utdallasCorrectionDictionary "data/utdallas.txt"
+loadVocabulary path = HS.fromList . fmap (CI.mk . TL.toStrict) . TL.lines . TL.decodeLatin1 <$> BL.readFile path
 
 emnlpCorrectionDictionary :: FilePath -> IO CorrectionDictionary
-emnlpCorrectionDictionary path = M.fromList . fmap (toPairs . T.words . TL.toStrict) . TL.lines . decodeUtf8 <$> BL.readFile path
-    where toPairs (x:xs) = (CI.mk x, xs)
+emnlpCorrectionDictionary path = HM.fromList . fmap (toPairs . T.words . TL.toStrict) . TL.lines . TL.decodeUtf8 <$> BL.readFile path
+    where toPairs (x:xs) = (CI.mk x, HS.fromList xs)
 
 utdallasCorrectionDictionary :: FilePath -> IO CorrectionDictionary
-utdallasCorrectionDictionary path = M.fromList . fmap (toPairs . T.words . TL.toStrict) . TL.lines . decodeUtf8 <$> BL.readFile path
-    where toPairs (_:word:xs) = (CI.mk word, filter (/= "|") xs)
+utdallasCorrectionDictionary path = HM.fromList . fmap (toPairs . T.words . TL.toStrict) . TL.lines . TL.decodeUtf8 <$> BL.readFile path
+    where toPairs (_:word:xs) = (CI.mk word, HS.fromList $ filter (/= "|") xs)
+
+mapHashSet :: (Hashable a, Eq a) => (a -> b) -> HS.HashSet a -> HM.HashMap a b
+mapHashSet f = HM.fromList . fmap (\x -> (x, f x)) . HS.toList

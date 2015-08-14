@@ -24,7 +24,9 @@ executable noisy-text
                      , text
                      , aeson
                      , containers
+                     , hashable
                      , unordered-containers
                      , case-insensitive
   hs-source-dirs:      src
+  ghc-options:         -O
   default-language:    Haskell2010

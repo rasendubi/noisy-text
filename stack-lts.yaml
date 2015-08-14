@@ -1,6 +1,5 @@
 flags: {}
 packages:
 - '.'
-extra-deps:
-- phonetic-code-0.1.1.1
+extra-deps: []
 resolver: lts-2.20
