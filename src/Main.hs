@@ -44,14 +44,18 @@ type WordSuggestion = T.Text -> HM.HashMap T.Text Double
 
 suggestions :: HM.HashMap T.Text WordSuggestion
 suggestions = HM.fromList
-    [ ("oov",  oovSuggest)
+    [ ("id",   \x -> HM.singleton x 1)
+    , ("oov",  oovSuggest)
     , ("corr", corrSuggest)
     ]
+
+allSuggestions :: T.Text -> HM.HashMap T.Text (HM.HashMap T.Text Double)
+allSuggestions x = fmap ($ x) suggestions
 
 main :: IO ()
 main = do
     Just tweets <- getTweets "data/test_data_20150430.json"
-    let result = fmap (fmap (\x -> (x, fmap ($ x) suggestions)) . tInput) tweets
+    let result = fmap (fmap allSuggestions . tInput) tweets
     BL.putStrLn $ JSON.encode result
 
 vocabulary :: Vocabulary
