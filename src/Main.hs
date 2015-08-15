@@ -39,6 +39,7 @@ data Tweet = Tweet
     , tIndex  :: {-# UNPACK #-}!T.Text
     , tInput  :: ![T.Text]
     , tSuggestions :: !(Maybe [HM.HashMap T.Text Suggestions])
+    , tResult :: !(Maybe [T.Text])
     , tOutput :: !(Maybe [T.Text])
     } deriving (Eq, Show)
 
@@ -83,10 +84,10 @@ allSuggestions :: T.Text -> HM.HashMap T.Text Suggestions
 allSuggestions x = fmap ($ x) suggestions
 
 processTweet :: Tweet -> Tweet
-processTweet t = t{ tSuggestions = Just suggestions, tOutput = Just output }
+processTweet t = t{ tSuggestions = Just suggestions, tResult = Just result }
     where
         suggestions = fmap allSuggestions $ tInput t
-        output = fmap (bestSuggestion . mergeAllSuggestions) suggestions
+        result = fmap (bestSuggestion . mergeAllSuggestions) suggestions
 
 main :: IO ()
 main = do
