@@ -47,7 +47,7 @@ type WordSuggestion = T.Text -> HM.HashMap T.Text Double
 suggestions :: HM.HashMap T.Text WordSuggestion
 suggestions = HM.fromList
     [ ("id",   \x -> HM.singleton x 1)
-    , ("oov",  oovSuggest)
+    , ("vocabulary", vocabularySuggest)
     , ("corr", corrSuggest)
     ]
 
@@ -69,8 +69,8 @@ vocabulary :: Vocabulary
 vocabulary = unsafePerformIO $ loadVocabulary "data/scowl.american.70"
 {-# NOINLINE vocabulary #-}
 
-oovSuggest :: WordSuggestion
-oovSuggest x
+vocabularySuggest :: WordSuggestion
+vocabularySuggest x
     | HS.member (CI.mk x) vocabulary = HM.singleton x 1
     | otherwise                      = HM.empty
 
