@@ -30,6 +30,7 @@ data Tweet = Tweet
     { tTid    :: {-# UNPACK #-}!T.Text
     , tIndex  :: {-# UNPACK #-}!T.Text
     , tInput  :: ![T.Text]
+    , tSuggestions :: !(Maybe [HM.HashMap T.Text (HM.HashMap T.Text Double)])
     , tOutput :: !(Maybe [T.Text])
     } deriving (Eq, Show)
 
@@ -55,7 +56,7 @@ allSuggestions x = fmap ($ x) suggestions
 main :: IO ()
 main = do
     Just tweets <- getTweets "data/test_data_20150430.json"
-    let result = fmap (fmap allSuggestions . tInput) tweets
+    let result = fmap (\t -> t{ tSuggestions = Just $ fmap allSuggestions $ tInput t}) tweets
     BL.putStrLn $ JSON.encode result
 
 vocabulary :: Vocabulary
