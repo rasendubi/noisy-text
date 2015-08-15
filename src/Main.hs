@@ -8,7 +8,9 @@ import System.IO.Unsafe (unsafePerformIO)
 import System.Environment (getArgs)
 
 import Data.Char (toLower, isPunctuation, isNumber, isSymbol)
-import Data.List (foldl')
+import Data.List (foldl', maximumBy)
+import Data.Maybe (fromMaybe)
+import Data.Function (on)
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as BL
@@ -56,8 +58,35 @@ suggestions = HM.fromList
     --, ("edits2", edits2Suggest)
     ]
 
+mergeAllSuggestions :: HM.HashMap T.Text Suggestions -> Suggestions
+mergeAllSuggestions = HM.fromListWith (+) . concatMap prioritize . HM.toList
+    where
+        prioritize :: (T.Text, HM.HashMap T.Text Double) -> [(T.Text, Double)]
+        prioritize (method, suggestions) =
+            case HM.lookup method coeffs of
+                Just coeff -> fmap (\(x,y) -> (x, y*coeff)) $ HM.toList suggestions
+                Nothing    -> []
+
+        coeffs :: HM.HashMap T.Text Double
+        coeffs = HM.fromList
+            [ ("id", 0.8880641753975278)
+            , ("vocabulary", 0.712581004310714)
+            , ("corr", 0.05526849182106255)
+            , ("exclude", 1000)
+            , ("split", 0.003254446315909675)
+            ]
+
+bestSuggestion :: Suggestions -> T.Text
+bestSuggestion = fst . maximumBy (compare `on` snd) . HM.toList
+
 allSuggestions :: T.Text -> HM.HashMap T.Text Suggestions
 allSuggestions x = fmap ($ x) suggestions
+
+processTweet :: Tweet -> Tweet
+processTweet t = t{ tSuggestions = Just suggestions, tOutput = Just output }
+    where
+        suggestions = fmap allSuggestions $ tInput t
+        output = fmap (bestSuggestion . mergeAllSuggestions) suggestions
 
 main :: IO ()
 main = do
@@ -66,9 +95,7 @@ main = do
                        [file] -> file
                        _      -> "data/test_data_20150430.json"
 
-    Just tweets <- getTweets fileName
-    let result = fmap (\t -> t{ tSuggestions = Just $ fmap allSuggestions $ tInput t}) tweets
-    BL.putStrLn $ JSON.encode result
+    BL.putStrLn . JSON.encode . fmap processTweet . fromMaybe [] =<< getTweets fileName
 
 vocabulary :: Vocabulary
 vocabulary = unsafePerformIO $ loadVocabulary "data/scowl.american.70"
@@ -93,7 +120,7 @@ excludeSuggest :: T.Text -> Suggestions
 excludeSuggest = flagSuggestion $ \x -> T.head x == '#' || T.head x == '@' || T.all (\c -> isSymbol c || isPunctuation c || isNumber c) x
 
 splitSuggest :: T.Text -> Suggestions
-splitSuggest x = HM.delete x $ splitSuggest' x
+splitSuggest x = HM.map (\x -> 1 / (x - 1)) . HM.delete x $ splitSuggest' x
     where
         splitSuggest' word
             | inVocabulary word = HM.singleton word 1
