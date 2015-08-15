@@ -1,11 +1,13 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
 import Control.Applicative ( (<$>), (<*>) )
+import Control.Monad (guard)
 
 import System.IO.Unsafe (unsafePerformIO)
 import System.Environment (getArgs)
 
 import Data.Char (toLower, isPunctuation, isNumber, isSymbol)
+import Data.List (foldl')
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as BL
@@ -25,11 +27,13 @@ import Data.Aeson.TH (deriveJSON, defaultOptions, fieldLabelModifier)
 import           Data.CaseInsensitive ( CI )
 import qualified Data.CaseInsensitive as CI
 
+type Suggestions = HM.HashMap T.Text Double
+
 data Tweet = Tweet
     { tTid    :: {-# UNPACK #-}!T.Text
     , tIndex  :: {-# UNPACK #-}!T.Text
     , tInput  :: ![T.Text]
-    , tSuggestions :: !(Maybe [HM.HashMap T.Text (HM.HashMap T.Text Double)])
+    , tSuggestions :: !(Maybe [HM.HashMap T.Text Suggestions])
     , tOutput :: !(Maybe [T.Text])
     } deriving (Eq, Show)
 
@@ -38,19 +42,16 @@ deriveJSON defaultOptions{fieldLabelModifier = fmap toLower . drop 1} ''Tweet
 type Vocabulary = HS.HashSet (CI T.Text)
 type CorrectionDictionary = HM.HashMap (CI T.Text) (HS.HashSet T.Text)
 
--- | WordSuggestion is function from word to hash map of suggested words
--- where value is a probability.
-type WordSuggestion = T.Text -> HM.HashMap T.Text Double
-
-suggestions :: HM.HashMap T.Text WordSuggestion
+suggestions :: HM.HashMap T.Text (T.Text -> Suggestions)
 suggestions = HM.fromList
     [ ("id", flagSuggestion (const True))
     , ("vocabulary", vocabularySuggest)
     , ("corr", corrSuggest)
     , ("exclude", excludeSuggest)
+    , ("split", splitSuggest)
     ]
 
-allSuggestions :: T.Text -> HM.HashMap T.Text (HM.HashMap T.Text Double)
+allSuggestions :: T.Text -> HM.HashMap T.Text Suggestions
 allSuggestions x = fmap ($ x) suggestions
 
 main :: IO ()
@@ -68,10 +69,13 @@ vocabulary :: Vocabulary
 vocabulary = unsafePerformIO $ loadVocabulary "data/scowl.american.70"
 {-# NOINLINE vocabulary #-}
 
-vocabularySuggest :: WordSuggestion
-vocabularySuggest = flagSuggestion $ \x -> HS.member (CI.mk x) vocabulary
+inVocabulary :: T.Text -> Bool
+inVocabulary x = HS.member (CI.mk x) vocabulary
 
-corrSuggest :: WordSuggestion
+vocabularySuggest :: T.Text -> Suggestions
+vocabularySuggest = flagSuggestion inVocabulary
+
+corrSuggest :: T.Text -> Suggestions
 corrSuggest x = mapHashSet (const 1) $ HM.lookupDefault HS.empty (CI.mk x) correctionDictionary
     where
         correctionDictionary :: CorrectionDictionary
@@ -80,10 +84,20 @@ corrSuggest x = mapHashSet (const 1) $ HM.lookupDefault HS.empty (CI.mk x) corre
             <*> utdallasCorrectionDictionary "data/utdallas.txt"
         {-# NOINLINE correctionDictionary #-}
 
-excludeSuggest :: WordSuggestion
+excludeSuggest :: T.Text -> Suggestions
 excludeSuggest = flagSuggestion $ \x -> T.head x == '#' || T.head x == '@' || T.all (\c -> isSymbol c || isPunctuation c || isNumber c) x
 
-flagSuggestion :: (T.Text -> Bool) -> WordSuggestion
+splitSuggest :: T.Text -> Suggestions
+splitSuggest word 
+    | inVocabulary word = HM.singleton word 1
+    | otherwise = foldl' suggestionUnion HM.empty $ do
+        (x, y) <- allSplits
+        guard $ inVocabulary x
+        let next = splitSuggest y
+        return $ mapKeyValue (\(k,v) -> (T.concat [x, " ", k], succ v)) next
+    where allSplits = tail $ init $ zip (T.inits word) (T.tails word)
+
+flagSuggestion :: (T.Text -> Bool) -> T.Text -> Suggestions
 flagSuggestion p x = if p x then HM.singleton x 1 else HM.empty
 
 getTweets :: FilePath -> IO (Maybe [Tweet])
@@ -105,3 +119,9 @@ parseDictionary toPairs path = HM.fromList . fmap (toPairs . T.words . TL.toStri
 
 mapHashSet :: (Hashable a, Eq a) => (a -> b) -> HS.HashSet a -> HM.HashMap a b
 mapHashSet f = HM.fromList . fmap (\x -> (x, f x)) . HS.toList
+
+mapKeyValue :: (Eq c, Hashable c) => ((a,b) -> (c,d)) -> HM.HashMap a b -> HM.HashMap c d
+mapKeyValue f = HM.fromList . fmap f . HM.toList
+
+suggestionUnion :: Suggestions -> Suggestions -> Suggestions
+suggestionUnion = HM.unionWith (+)
