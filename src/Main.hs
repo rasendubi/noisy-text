@@ -88,14 +88,16 @@ excludeSuggest :: T.Text -> Suggestions
 excludeSuggest = flagSuggestion $ \x -> T.head x == '#' || T.head x == '@' || T.all (\c -> isSymbol c || isPunctuation c || isNumber c) x
 
 splitSuggest :: T.Text -> Suggestions
-splitSuggest word 
-    | inVocabulary word = HM.singleton word 1
-    | otherwise = foldl' suggestionUnion HM.empty $ do
-        (x, y) <- allSplits
-        guard $ inVocabulary x
-        let next = splitSuggest y
-        return $ mapKeyValue (\(k,v) -> (T.concat [x, " ", k], succ v)) next
-    where allSplits = tail $ init $ zip (T.inits word) (T.tails word)
+splitSuggest x = HM.delete x $ splitSuggest' x
+    where
+        splitSuggest' word
+            | inVocabulary word = HM.singleton word 1
+            | otherwise = foldl' suggestionUnion HM.empty $ do
+                (x, y) <- allSplits
+                guard $ inVocabulary x
+                let next = splitSuggest' y
+                return $ mapKeyValue (\(k,v) -> (T.concat [x, " ", k], succ v)) next
+            where allSplits = tail $ init $ zip (T.inits word) (T.tails word)
 
 flagSuggestion :: (T.Text -> Bool) -> T.Text -> Suggestions
 flagSuggestion p x = if p x then HM.singleton x 1 else HM.empty
