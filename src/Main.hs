@@ -44,7 +44,7 @@ type WordSuggestion = T.Text -> HM.HashMap T.Text Double
 
 suggestions :: HM.HashMap T.Text WordSuggestion
 suggestions = HM.fromList
-    [ ("id",   \x -> HM.singleton x 1)
+    [ ("id", flagSuggestion (const True))
     , ("vocabulary", vocabularySuggest)
     , ("corr", corrSuggest)
     , ("exclude", excludeSuggest)
@@ -69,9 +69,7 @@ vocabulary = unsafePerformIO $ loadVocabulary "data/scowl.american.70"
 {-# NOINLINE vocabulary #-}
 
 vocabularySuggest :: WordSuggestion
-vocabularySuggest x
-    | HS.member (CI.mk x) vocabulary = HM.singleton x 1
-    | otherwise                      = HM.empty
+vocabularySuggest = flagSuggestion $ \x -> HS.member (CI.mk x) vocabulary
 
 corrSuggest :: WordSuggestion
 corrSuggest x = mapHashSet (const 1) $ HM.lookupDefault HS.empty (CI.mk x) correctionDictionary
@@ -83,10 +81,10 @@ corrSuggest x = mapHashSet (const 1) $ HM.lookupDefault HS.empty (CI.mk x) corre
         {-# NOINLINE correctionDictionary #-}
 
 excludeSuggest :: WordSuggestion
-excludeSuggest x
-    | T.head x == '#' || T.head x == '@' || isSigns x = HM.singleton x 1
-    | otherwise                                       = HM.empty
-    where isSigns = T.all (\c -> isSymbol c || isPunctuation c || isNumber c)
+excludeSuggest = flagSuggestion $ \x -> T.head x == '#' || T.head x == '@' || T.all (\c -> isSymbol c || isPunctuation c || isNumber c) x
+
+flagSuggestion :: (T.Text -> Bool) -> WordSuggestion
+flagSuggestion p x = if p x then HM.singleton x 1 else HM.empty
 
 getTweets :: FilePath -> IO (Maybe [Tweet])
 getTweets path = JSON.decode' <$> BL.readFile path
