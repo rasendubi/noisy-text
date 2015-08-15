@@ -17,7 +17,7 @@ cabal-version:       >=1.10
 
 executable noisy-text
   main-is:             Main.hs
-  -- other-modules:       
+  other-modules:       Norvig
   -- other-extensions:    
   build-depends:       base >=4.7 && <4.9
                      , bytestring

@@ -1,5 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TupleSections #-}
 import Control.Applicative ( (<$>), (<*>) )
 import Control.Monad (guard)
 
@@ -27,6 +28,8 @@ import Data.Aeson.TH (deriveJSON, defaultOptions, fieldLabelModifier)
 import           Data.CaseInsensitive ( CI )
 import qualified Data.CaseInsensitive as CI
 
+import Norvig
+
 type Suggestions = HM.HashMap T.Text Double
 
 data Tweet = Tweet
@@ -49,6 +52,8 @@ suggestions = HM.fromList
     , ("corr", corrSuggest)
     , ("exclude", excludeSuggest)
     , ("split", splitSuggest)
+    , ("edits1", edits1Suggest)
+    --, ("edits2", edits2Suggest)
     ]
 
 allSuggestions :: T.Text -> HM.HashMap T.Text Suggestions
@@ -98,6 +103,13 @@ splitSuggest x = HM.delete x $ splitSuggest' x
                 let next = splitSuggest' y
                 return $ mapKeyValue (\(k,v) -> (T.concat [x, " ", k], succ v)) next
             where allSplits = tail $ init $ zip (T.inits word) (T.tails word)
+
+edits1Suggest :: T.Text -> Suggestions
+edits1Suggest = HM.fromList . fmap (,1) . knownEdits1 inVocabulary
+
+edits2Suggest :: T.Text -> Suggestions
+edits2Suggest = HM.fromList . fmap (,1) . knownEdits1 (\x -> HS.member (CI.mk x) extendedVocabulary)
+    where extendedVocabulary = HS.fromList . fmap CI.mk . concatMap (edits1 . CI.original) $ HS.toList vocabulary
 
 flagSuggestion :: (T.Text -> Bool) -> T.Text -> Suggestions
 flagSuggestion p x = if p x then HM.singleton x 1 else HM.empty
