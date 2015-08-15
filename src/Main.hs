@@ -1,13 +1,11 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE OverloadedStrings #-}
 import Control.Applicative ( (<$>), (<*>) )
-import Control.Monad (forM_)
 
 import System.IO.Unsafe (unsafePerformIO)
 import System.Environment (getArgs)
 
-import Data.Char (toLower)
-import Data.List (union)
+import Data.Char (toLower, isPunctuation, isNumber, isSymbol)
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as BL
@@ -49,6 +47,7 @@ suggestions = HM.fromList
     [ ("id",   \x -> HM.singleton x 1)
     , ("vocabulary", vocabularySuggest)
     , ("corr", corrSuggest)
+    , ("exclude", excludeSuggest)
     ]
 
 allSuggestions :: T.Text -> HM.HashMap T.Text (HM.HashMap T.Text Double)
@@ -74,7 +73,6 @@ vocabularySuggest x
     | HS.member (CI.mk x) vocabulary = HM.singleton x 1
     | otherwise                      = HM.empty
 
-
 corrSuggest :: WordSuggestion
 corrSuggest x = mapHashSet (const 1) $ HM.lookupDefault HS.empty (CI.mk x) correctionDictionary
     where
@@ -84,6 +82,12 @@ corrSuggest x = mapHashSet (const 1) $ HM.lookupDefault HS.empty (CI.mk x) corre
             <*> utdallasCorrectionDictionary "data/utdallas.txt"
         {-# NOINLINE correctionDictionary #-}
 
+excludeSuggest :: WordSuggestion
+excludeSuggest x
+    | T.head x == '#' || T.head x == '@' || isSigns x = HM.singleton x 1
+    | otherwise                                       = HM.empty
+    where isSigns = T.all (\c -> isSymbol c || isPunctuation c || isNumber c)
+
 getTweets :: FilePath -> IO (Maybe [Tweet])
 getTweets path = JSON.decode' <$> BL.readFile path
 
@@ -91,12 +95,15 @@ loadVocabulary :: FilePath -> IO Vocabulary
 loadVocabulary path = HS.fromList . fmap (CI.mk . TL.toStrict) . TL.lines . TL.decodeLatin1 <$> BL.readFile path
 
 emnlpCorrectionDictionary :: FilePath -> IO CorrectionDictionary
-emnlpCorrectionDictionary path = HM.fromList . fmap (toPairs . T.words . TL.toStrict) . TL.lines . TL.decodeUtf8 <$> BL.readFile path
+emnlpCorrectionDictionary = parseDictionary toPairs
     where toPairs (x:xs) = (CI.mk x, HS.fromList xs)
 
 utdallasCorrectionDictionary :: FilePath -> IO CorrectionDictionary
-utdallasCorrectionDictionary path = HM.fromList . fmap (toPairs . T.words . TL.toStrict) . TL.lines . TL.decodeUtf8 <$> BL.readFile path
+utdallasCorrectionDictionary = parseDictionary toPairs
     where toPairs (_:word:xs) = (CI.mk word, HS.fromList $ filter (/= "|") xs)
+
+parseDictionary :: (Hashable k, Eq k) => ([T.Text] -> (k, v)) -> FilePath -> IO (HM.HashMap k v)
+parseDictionary toPairs path = HM.fromList . fmap (toPairs . T.words . TL.toStrict) . TL.lines . TL.decodeUtf8 <$> BL.readFile path
 
 mapHashSet :: (Hashable a, Eq a) => (a -> b) -> HS.HashSet a -> HM.HashMap a b
 mapHashSet f = HM.fromList . fmap (\x -> (x, f x)) . HS.toList
