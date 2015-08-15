@@ -4,6 +4,7 @@ import Control.Applicative ( (<$>), (<*>) )
 import Control.Monad (forM_)
 
 import System.IO.Unsafe (unsafePerformIO)
+import System.Environment (getArgs)
 
 import Data.Char (toLower)
 import Data.List (union)
@@ -55,7 +56,12 @@ allSuggestions x = fmap ($ x) suggestions
 
 main :: IO ()
 main = do
-    Just tweets <- getTweets "data/test_data_20150430.json"
+    args <- getArgs
+    let fileName = case args of
+                       [file] -> file
+                       _      -> "data/test_data_20150430.json"
+
+    Just tweets <- getTweets fileName
     let result = fmap (\t -> t{ tSuggestions = Just $ fmap allSuggestions $ tInput t}) tweets
     BL.putStrLn $ JSON.encode result
 
