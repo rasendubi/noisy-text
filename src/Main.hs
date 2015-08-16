@@ -75,6 +75,7 @@ mergeAllSuggestions = HM.fromListWith (+) . concatMap prioritize . HM.toList
             , ("corr", 0.05526849182106255)
             , ("exclude", 1000)
             , ("split", 0.003254446315909675)
+            , ("edits1", 0.7355048673955865)
             ]
 
 bestSuggestion :: Suggestions -> T.Text
