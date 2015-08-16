@@ -6,11 +6,15 @@ import Control.Monad (guard)
 
 import System.IO.Unsafe (unsafePerformIO)
 import System.Environment (getArgs)
+import System.Process (readProcess)
 
 import Data.Char (toLower, isPunctuation, isNumber, isSymbol)
 import Data.List (foldl', maximumBy)
 import Data.Maybe (fromMaybe)
 import Data.Function (on)
+
+import qualified Data.Vector (Vector)
+import qualified Data.Vector as V
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy.Char8 as BL
@@ -81,6 +85,23 @@ mergeAllSuggestions = HM.fromListWith (+) . concatMap prioritize . HM.toList
 bestSuggestion :: Suggestions -> T.Text
 bestSuggestion = fst . maximumBy (compare `on` snd) . HM.toList
 
+runLanguageModel :: [T.Text] -> [Suggestions] -> [Suggestions]
+runLanguageModel input suggestions =
+        V.toList $ V.imap prioritize $ V.fromList suggestions
+    where
+        vinput = V.fromList input
+        getContext i = safeSlice2 (i - 2) vinput ++ safeSlice2 (i + 1) vinput
+
+        prioritize i s = HM.unionWith (*) s lm
+            where lm = tlanguageModel (getContext i) (HM.keys s)
+
+safeSlice2 :: Int -> V.Vector T.Text -> [T.Text]
+safeSlice2 i vinput = add ++ V.toList (V.slice i' j' vinput)
+    where
+        i' = max i 0
+        j' = min (2 - (i' - i)) (V.length vinput - i')
+        add = replicate (2 - j') ""
+
 allSuggestions :: T.Text -> HM.HashMap T.Text Suggestions
 allSuggestions x = fmap ($ x) suggestions
 
@@ -88,7 +109,7 @@ processTweet :: Tweet -> Tweet
 processTweet t = t{ tSuggestions = Just suggestions, tResult = Just result }
     where
         suggestions = fmap allSuggestions $ tInput t
-        result = fmap (bestSuggestion . mergeAllSuggestions) suggestions
+        result = fmap bestSuggestion . runLanguageModel (tInput t) $ fmap mergeAllSuggestions suggestions
 
 main :: IO ()
 main = do
@@ -168,3 +189,9 @@ mapKeyValue f = HM.fromList . fmap f . HM.toList
 
 suggestionUnion :: Suggestions -> Suggestions -> Suggestions
 suggestionUnion = HM.unionWith (+)
+
+tlanguageModel :: [T.Text] -> [T.Text] -> HM.HashMap T.Text Double
+tlanguageModel context candidates = fromMaybe HM.empty $ JSON.decode' $ BL.pack $ languageModel (fmap T.unpack context) (fmap T.unpack candidates)
+
+languageModel :: [String] -> [String] -> String
+languageModel context candidates = unsafePerformIO $ readProcess "python" ("python/kenLM.py":context ++ candidates) []

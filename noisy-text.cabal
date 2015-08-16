@@ -27,6 +27,8 @@ executable noisy-text
                      , hashable
                      , unordered-containers
                      , case-insensitive
+                     , process
+                     , vector
   hs-source-dirs:      src
   ghc-options:         -O
   default-language:    Haskell2010
