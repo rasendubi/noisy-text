@@ -43,6 +43,8 @@ data Tweet = Tweet
     , tIndex  :: {-# UNPACK #-}!T.Text
     , tInput  :: ![T.Text]
     , tSuggestions :: !(Maybe [HM.HashMap T.Text Suggestions])
+    , tErrorModel :: !(Maybe [Suggestions])
+    , tLanguageModel :: !(Maybe [Suggestions])
     , tResult :: !(Maybe [T.Text])
     , tOutput :: !(Maybe [T.Text])
     } deriving (Eq, Show)
@@ -85,15 +87,14 @@ mergeAllSuggestions = HM.fromListWith (+) . concatMap prioritize . HM.toList
 bestSuggestion :: Suggestions -> T.Text
 bestSuggestion = fst . maximumBy (compare `on` snd) . HM.toList
 
-runLanguageModel :: [T.Text] -> [Suggestions] -> [Suggestions]
-runLanguageModel input suggestions =
-        V.toList $ V.imap prioritize $ V.fromList suggestions
+mapLanguageModel :: [T.Text] -> [Suggestions] -> [Suggestions]
+mapLanguageModel input candidates =
+        V.toList $ V.imap getLanguageModel $ V.fromList candidates
     where
         vinput = V.fromList input
         getContext i = safeSlice2 (i - 2) vinput ++ safeSlice2 (i + 1) vinput
 
-        prioritize i s = HM.unionWith (*) s lm
-            where lm = tlanguageModel (getContext i) (HM.keys s)
+        getLanguageModel i s = tlanguageModel (getContext i) (HM.keys s)
 
 safeSlice2 :: Int -> V.Vector T.Text -> [T.Text]
 safeSlice2 i vinput = add ++ V.toList (V.slice i' j' vinput)
@@ -106,10 +107,17 @@ allSuggestions :: T.Text -> HM.HashMap T.Text Suggestions
 allSuggestions x = fmap ($ x) suggestions
 
 processTweet :: Tweet -> Tweet
-processTweet t = t{ tSuggestions = Just suggestions, tResult = Just result }
+processTweet t = t
+        { tSuggestions   = Just suggestions
+        , tErrorModel    = Just errorModel
+        , tLanguageModel = Just languageModel
+        , tResult        = Just result
+        }
     where
         suggestions = fmap allSuggestions $ tInput t
-        result = fmap bestSuggestion . runLanguageModel (tInput t) $ fmap mergeAllSuggestions suggestions
+        errorModel = fmap mergeAllSuggestions suggestions
+        languageModel = mapLanguageModel (tInput t) errorModel
+        result = zipWith ((bestSuggestion .) . HM.unionWith (*)) errorModel languageModel
 
 main :: IO ()
 main = do
