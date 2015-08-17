@@ -165,7 +165,9 @@ corrSuggest x = mapHashSet (const 1) $ HM.lookupDefault HS.empty (CI.mk x) corre
         {-# NOINLINE correctionDictionary #-}
 
 excludeSuggest :: T.Text -> Suggestions
-excludeSuggest = flagSuggestion $ \x -> T.head x == '#' || T.head x == '@' || T.all (\c -> isSymbol c || isPunctuation c || isNumber c) x
+excludeSuggest = flagSuggestion shouldExclude
+
+shouldExclude x = T.head x == '#' || T.head x == '@' || T.all (\c -> isSymbol c || isPunctuation c || isNumber c) x
 
 splitSuggest :: T.Text -> Suggestions
 splitSuggest x = HM.map (\x -> 1 / (x - 1)) . HM.delete x $ splitSuggest' x
@@ -221,7 +223,7 @@ suggestionUnion :: Suggestions -> Suggestions -> Suggestions
 suggestionUnion = HM.unionWith (+)
 
 tgetSentenceProbability :: [T.Text] -> Double
-tgetSentenceProbability = getSentenceProbability . fmap T.encodeUtf8
+tgetSentenceProbability = getSentenceProbability . fmap (T.encodeUtf8 . T.toLower)
 
 tlanguageModel :: [T.Text] -> [T.Text] -> [T.Text] -> HM.HashMap T.Text Double
 tlanguageModel part1 part2 candidates = HM.fromList $ zip candidates $ languageModel (toBS part1) (toBS part2) (toBS candidates)

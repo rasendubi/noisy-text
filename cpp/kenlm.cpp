@@ -16,10 +16,10 @@ double sentence_probability(const State& state, const char * const words[], int 
 	State cur_state = state;
 	double last_score = 0;
 	for (int i = 0; i < len; ++i) {
-		last_score = model.Score(cur_state, vocab.Index(words[i]), out_state);
+		last_score += model.Score(cur_state, vocab.Index(words[i]), out_state);
 		cur_state = out_state;
 	}
-	return last_score;
+	return last_score / len;
 }
 
 static inline
