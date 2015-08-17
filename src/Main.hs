@@ -80,13 +80,11 @@ mergeAllSuggestions = HM.fromListWith (+) . concatMap prioritize . HM.toList
 
         coeffs :: HM.HashMap T.Text Double
         coeffs = HM.fromList
-            [ ("vocabulary", 0.72779605263157898)
-            , ("edits1", 0.084275075297827587)
-            , ("split", 0.0005433505639097743)
-            , ("corr", 0.054276315789473679)
-            , ("id", 0.89967105263157898)
-            , ("exclude", 1.0e100)
-            ]
+            [ ("vocabulary", 0.71258100431071403), 
+              ("edits1", 0.089734946722459519), 
+              ("split", 0.00050437900301398999), 
+              ("corr", 0.0532701475919952), 
+              ("id", 0.8880641753975278)]
 
 bestSuggestion :: Suggestions -> T.Text
 bestSuggestion = fst . maximumBy (compare `on` snd) . HM.toList
