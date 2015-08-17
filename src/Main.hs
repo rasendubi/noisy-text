@@ -220,7 +220,7 @@ suggestionUnion :: Suggestions -> Suggestions -> Suggestions
 suggestionUnion = HM.unionWith (+)
 
 tgetSentenceProbability :: [T.Text] -> Double
-tgetSentenceProbability = getSentenceProbability . fmap T.encodeUtf8
+tgetSentenceProbability = getSentenceProbability . fmap (T.encodeUtf8 . T.toLower)
 
 tlanguageModel :: [T.Text] -> [T.Text] -> [T.Text] -> HM.HashMap T.Text Double
 tlanguageModel part1 part2 candidates = HM.fromList $ zip candidates $ languageModel (toBS part1) (toBS part2) (toBS candidates)
