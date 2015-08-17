@@ -330,7 +330,7 @@ FTTB For the time being
 FTTYYGTS Fart That Tells You You Got To Shit
 FTW For The Win
 FUBAB fucked up beyond all belief
-FUBAR fucked up beyond all reason / recognition / repair
+FUBAR fucked up beyond all reason | fucked up beyound all recognition | fucked up beyound all repair
 FUBB Fucked Up Beyond Belief
 FUBIO Fuck You Buddy I'm Out
 FUD Fear, Uncertainty and Doubt
@@ -546,7 +546,7 @@ LMIRL Let's meet in real life
 LMK Let me know
 LOL Laughing Out Loud | Lots Of Love
 LOLA Laugh Out Loud Again
-LOLERSKATES Laugh Out Loud +Skates
+LOLERSKATES Laugh Out Loud Skates
 LOLLERSKATES Laugh Out Loud Skates - Hilarity on wheels; Funny plus skates
 LOOL Laughing Outragously Out Loud
 LOPSOD Long on promises, short on delivery
