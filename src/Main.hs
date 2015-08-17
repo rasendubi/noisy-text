@@ -2,7 +2,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
 import Control.Applicative ( (<$>), (<*>) )
-import Control.Monad (guard)
+import Control.Monad (guard, forM_, when)
+import Control.Concurrent (forkIO)
 
 import System.IO.Unsafe (unsafePerformIO)
 import System.Environment (getArgs)
@@ -10,16 +11,17 @@ import System.Process (readProcess)
 
 import Data.Char (toLower, isPunctuation, isNumber, isSymbol)
 import Data.List (foldl', maximumBy)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, fromJust, isJust)
 import Data.Function (on)
 
 import qualified Data.Vector (Vector)
 import qualified Data.Vector as V
 
-import qualified Data.ByteString as BS
+import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BL
 
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T (encodeUtf8)
 import qualified Data.Text.Lazy as TL
 import qualified Data.Text.Lazy.Encoding as TL (decodeUtf8, decodeLatin1)
 
@@ -35,6 +37,7 @@ import           Data.CaseInsensitive ( CI )
 import qualified Data.CaseInsensitive as CI
 
 import Norvig
+import KenLM
 
 type Suggestions = HM.HashMap T.Text Double
 
@@ -76,42 +79,43 @@ mergeAllSuggestions = HM.fromListWith (+) . concatMap prioritize . HM.toList
 
         coeffs :: HM.HashMap T.Text Double
         coeffs = HM.fromList
-            [ ("id", 0.8880641753975278)
-            , ("vocabulary", 0.712581004310714)
-            , ("corr", 0.05526849182106255)
-            , ("exclude", 1000)
-            , ("split", 0.003254446315909675)
-            , ("edits1", 0.7355048673955865)
+            [ ("vocabulary", 0.72779605263157898)
+            , ("edits1", 0.084275075297827587)
+            , ("split", 0.0005433505639097743)
+            , ("corr", 0.054276315789473679)
+            , ("id", 0.89967105263157898)
+            , ("exclude", 1.0e100)
             ]
 
 bestSuggestion :: Suggestions -> T.Text
 bestSuggestion = fst . maximumBy (compare `on` snd) . HM.toList
 
 mapLanguageModel :: [T.Text] -> [Suggestions] -> [Suggestions]
-mapLanguageModel input candidates =
-        V.toList $ V.imap getLanguageModel $ V.fromList candidates
+mapLanguageModel input suggestions =
+        V.toList $ V.imap getLanguageModel $ V.fromList suggestions
     where
         vinput = V.fromList input
-        getContext i = safeSlice2 (i - 2) vinput ++ safeSlice2 (i + 1) vinput
+        part1 i = V.toList $ V.take i vinput
+        part2 i = V.toList $ V.drop (i + 1) vinput
 
-        getLanguageModel i s = tlanguageModel (getContext i) (HM.keys s)
+        getLanguageModel i s = tlanguageModel (part1 i) (part2 i) (HM.keys s)
 
-safeSlice2 :: Int -> V.Vector T.Text -> [T.Text]
-safeSlice2 i vinput = add ++ V.toList (V.slice i' j' vinput)
-    where
-        i' = max i 0
-        j' = min (2 - (i' - i)) (V.length vinput - i')
-        add = replicate (2 - j') ""
+        safeSlice2 :: Int -> [T.Text]
+        safeSlice2 i = add ++ V.toList (V.slice i' j' vinput)
+            where
+                i' = max i 0
+                j' = min (2 - (i' - i)) (V.length vinput - i')
+                add = replicate (2 - j') ""
 
 allSuggestions :: T.Text -> HM.HashMap T.Text Suggestions
 allSuggestions x = fmap ($ x) suggestions
 
 processTweet :: Tweet -> Tweet
 processTweet t = t
-        { tSuggestions   = Just suggestions
+        { tResult        = Just result
+        , tSuggestions   = Just suggestions
         , tErrorModel    = Just errorModel
         , tLanguageModel = Just languageModel
-        , tResult        = Just result
         }
     where
         suggestions = fmap allSuggestions $ tInput t
@@ -126,7 +130,16 @@ main = do
                        [file] -> file
                        _      -> "data/test_data_20150430.json"
 
-    BL.putStrLn . JSON.encode . fmap processTweet . fromMaybe [] =<< getTweets fileName
+    --BL.putStrLn . JSON.encode . fmap processTweet . fromMaybe [] =<< getTweets fileName
+    result <- fmap processTweet . fromMaybe [] <$> getTweets fileName
+    forkIO $ BL.writeFile "result.json" $ JSON.encode result
+
+    forM_ result $ \t -> do
+        BS.putStrLn $ T.encodeUtf8 $ T.unwords $ tInput t
+        BS.putStrLn $ T.encodeUtf8 $ T.unwords $ fromJust $ tResult t
+        when (isJust $ tOutput t) $
+            BS.putStrLn . T.encodeUtf8 . T.unwords . fromMaybe [] $ tOutput t
+        putStrLn ""
 
 vocabulary :: Vocabulary
 vocabulary = unsafePerformIO $ loadVocabulary "data/scowl.american.70"
@@ -198,8 +211,6 @@ mapKeyValue f = HM.fromList . fmap f . HM.toList
 suggestionUnion :: Suggestions -> Suggestions -> Suggestions
 suggestionUnion = HM.unionWith (+)
 
-tlanguageModel :: [T.Text] -> [T.Text] -> HM.HashMap T.Text Double
-tlanguageModel context candidates = fromMaybe HM.empty $ JSON.decode' $ BL.pack $ languageModel (fmap T.unpack context) (fmap T.unpack candidates)
-
-languageModel :: [String] -> [String] -> String
-languageModel context candidates = unsafePerformIO $ readProcess "python" ("python/kenLM.py":context ++ candidates) []
+tlanguageModel :: [T.Text] -> [T.Text] -> [T.Text] -> HM.HashMap T.Text Double
+tlanguageModel part1 part2 candidates = HM.fromList $ zip candidates $ languageModel (toBS part1) (toBS part2) (toBS candidates)
+    where toBS = fmap T.encodeUtf8

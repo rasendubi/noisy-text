@@ -26,7 +26,7 @@ edits1 word = concat
         insertLetter = concat $ fmap insertChars [0 .. len]
 
         len = T.length word
-        alpha = ['a' .. 'z']
+        alpha = '\'' : ['a' .. 'z']
 
         dropChar n = T.append s (T.tail e)
             where (s, e) = T.splitAt n word

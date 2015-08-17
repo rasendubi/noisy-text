@@ -18,6 +18,13 @@ cabal-version:       >=1.10
 executable noisy-text
   main-is:             Main.hs
   other-modules:       Norvig
+                     , KenLM
+  c-sources:           cpp/kenlm.cpp
+  cc-options:          -O2
+
+  include-dirs:        kenlm
+  extra-libraries:     kenlm, boost_thread, boost_system, pthread, lzma, z, bz2, stdc++
+  extra-lib-dirs:      kenlm/lib
   -- other-extensions:    
   build-depends:       base >=4.7 && <4.9
                      , bytestring
@@ -30,5 +37,4 @@ executable noisy-text
                      , process
                      , vector
   hs-source-dirs:      src
-  ghc-options:         -O
   default-language:    Haskell2010
