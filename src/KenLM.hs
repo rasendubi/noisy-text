@@ -24,9 +24,18 @@ foreign import ccall unsafe "noisy_text_kenlm.h language_model"
         -> Ptr CDouble
         -> IO ()
 
+foreign import ccall unsafe "noisy_text_kenlm.h get_sentence_probability"
+    c_get_sentence_probability
+        :: Ptr CString
+        -> CInt
+        -> IO CDouble
+
+useWithList :: (a -> (b -> IO c) -> IO c) -> [a] -> ([b] -> IO c) -> IO c
+useWithList f []     cb = cb []
+useWithList f (x:xs) cb = f x $ \x' -> useWithList f xs $ \xs' -> cb (x':xs')
+
 useAsCStringList :: [BS.ByteString] -> ([CString] -> IO a) -> IO a
-useAsCStringList [] cb     = cb []
-useAsCStringList (x:xs) cb = BS.useAsCString x $ \x' -> useAsCStringList xs (\xs' -> cb (x':xs'))
+useAsCStringList = useWithList BS.useAsCString
 
 languageModel :: [BS.ByteString] -> [BS.ByteString] -> [BS.ByteString] -> [Double]
 languageModel part1 part2 cands =
@@ -42,3 +51,8 @@ languageModel part1 part2 cands =
             results
         coerce <$> peekArray cands_len results
 
+getSentenceProbability :: [BS.ByteString] -> Double
+getSentenceProbability sentence =
+    unsafePerformIO $
+    useAsCStringList sentence $ \pp -> withArrayLen pp $ \len p_sentence ->
+    coerce <$> c_get_sentence_probability p_sentence (fromIntegral len)

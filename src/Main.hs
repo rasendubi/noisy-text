@@ -15,7 +15,7 @@ import Data.List (foldl', foldl1', maximumBy)
 import Data.Maybe (fromMaybe, fromJust, isJust)
 import Data.Function (on)
 
-import qualified Data.Vector (Vector)
+import           Data.Vector (Vector)
 import qualified Data.Vector as V
 
 import qualified Data.ByteString.Char8 as BS
@@ -93,20 +93,13 @@ bestSuggestion = fst . maximumBy (compare `on` snd) . HM.toList
 
 mapLanguageModel :: [T.Text] -> [Suggestions] -> [Suggestions]
 mapLanguageModel input suggestions =
-        V.toList $ V.imap getLanguageModel $ V.fromList suggestions
+        V.toList $ V.imap (\i -> HM.mapWithKey (sentenceProbability i)) $ V.fromList suggestions
     where
         vinput = V.fromList input
         part1 i = V.toList $ V.take i vinput
         part2 i = V.toList $ V.drop (i + 1) vinput
 
-        getLanguageModel i s = tlanguageModel (part1 i) (part2 i) (HM.keys s)
-
-        safeSlice2 :: Int -> [T.Text]
-        safeSlice2 i = add ++ V.toList (V.slice i' j' vinput)
-            where
-                i' = max i 0
-                j' = min (2 - (i' - i)) (V.length vinput - i')
-                add = replicate (2 - j') ""
+        sentenceProbability i word _ = tgetSentenceProbability $ part1 i ++ T.words word ++ part2 i
 
 allSuggestions :: T.Text -> HM.HashMap T.Text Suggestions
 allSuggestions x = fmap ($ x) suggestions
@@ -212,7 +205,7 @@ utdallasCorrectionDictionary = parseDictionary toPairs
 
 smsSlangCorrectionDictionary :: FilePath -> IO CorrectionDictionary
 smsSlangCorrectionDictionary path = HM.fromList . fmap (toPairs . TL.toStrict) . TL.lines . TL.decodeUtf8 <$> BL.readFile path
-    where toPairs line = (CI.mk word, HS.fromList $ T.splitOn " | " rest)
+    where toPairs line = (CI.mk word, HS.fromList $ T.splitOn " | " $ T.tail rest)
             where (word, rest) = T.breakOn " " line
 
 parseDictionary :: (Hashable k, Eq k) => ([T.Text] -> (k, v)) -> FilePath -> IO (HM.HashMap k v)
@@ -226,6 +219,9 @@ mapKeyValue f = HM.fromList . fmap f . HM.toList
 
 suggestionUnion :: Suggestions -> Suggestions -> Suggestions
 suggestionUnion = HM.unionWith (+)
+
+tgetSentenceProbability :: [T.Text] -> Double
+tgetSentenceProbability = getSentenceProbability . fmap T.encodeUtf8
 
 tlanguageModel :: [T.Text] -> [T.Text] -> [T.Text] -> HM.HashMap T.Text Double
 tlanguageModel part1 part2 candidates = HM.fromList $ zip candidates $ languageModel (toBS part1) (toBS part2) (toBS candidates)

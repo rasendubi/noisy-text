@@ -39,6 +39,13 @@ void part1_probabilities(const char * const part1[], int part1_len, const char *
 }
 
 extern "C"
+double get_sentence_probability(const char * const sentence[], int len) {
+	State state(model.BeginSentenceState());
+	State out_state;
+	return std::exp(sentence_probability(state, sentence, len, out_state));
+}
+
+extern "C"
 void language_model(
 		const char * const part1[], int part1_len,
 		const char * const part2[], int part2_len,
