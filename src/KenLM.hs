@@ -13,8 +13,6 @@ import Foreign.Marshal.Array
 
 import System.IO.Unsafe (unsafePerformIO)
 
-import Control.DeepSeq
-
 foreign import ccall unsafe "noisy_text_kenlm.h language_model"
     c_language_model
         :: Ptr CString

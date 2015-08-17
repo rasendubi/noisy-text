@@ -7,7 +7,6 @@ import Control.Concurrent (forkIO)
 
 import System.IO.Unsafe (unsafePerformIO)
 import System.Environment (getArgs)
-import System.Process (readProcess)
 
 import Data.Char (toLower, isPunctuation, isNumber, isSymbol)
 import Data.List (foldl', maximumBy)
