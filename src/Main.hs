@@ -2,8 +2,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TupleSections #-}
 import Control.Applicative ( (<$>), (<*>) )
-import Control.Monad (guard, forM_, when)
+import Control.Monad (guard, forM_, when, void)
+import Control.Exception (finally)
 import Control.Concurrent (forkIO)
+import Control.Concurrent.MVar (newEmptyMVar, takeMVar, putMVar)
 
 import System.IO.Unsafe (unsafePerformIO)
 import System.Environment (getArgs)
@@ -131,7 +133,7 @@ main = do
 
     --BL.putStrLn . JSON.encode . fmap processTweet . fromMaybe [] =<< getTweets fileName
     result <- fmap processTweet . fromMaybe [] <$> getTweets fileName
-    forkIO $ BL.writeFile "result.json" $ JSON.encode result
+    wait <- forkIOWait $ BL.writeFile "result.json" $ JSON.encode result
 
     forM_ result $ \t -> do
         BS.putStrLn $ T.encodeUtf8 $ T.unwords $ tInput t
@@ -139,6 +141,14 @@ main = do
         when (isJust $ tOutput t) $
             BS.putStrLn . T.encodeUtf8 . T.unwords . fromMaybe [] $ tOutput t
         putStrLn ""
+
+    wait
+
+forkIOWait :: IO a -> IO (IO ())
+forkIOWait f = do
+    m <- newEmptyMVar
+    forkIO $ void f `finally` putMVar m ()
+    return $ takeMVar m
 
 vocabulary :: Vocabulary
 vocabulary = unsafePerformIO $ loadVocabulary "data/scowl.american.70"
