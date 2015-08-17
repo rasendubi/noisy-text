@@ -10,8 +10,8 @@ import Control.Concurrent.MVar (newEmptyMVar, takeMVar, putMVar)
 import System.IO.Unsafe (unsafePerformIO)
 import System.Environment (getArgs)
 
-import Data.Char (toLower, isPunctuation, isNumber, isSymbol)
-import Data.List (foldl', maximumBy)
+import Data.Char (toLower, isPunctuation, isNumber, isSymbol, isSpace)
+import Data.List (foldl', foldl1', maximumBy)
 import Data.Maybe (fromMaybe, fromJust, isJust)
 import Data.Function (on)
 
@@ -164,9 +164,11 @@ corrSuggest :: T.Text -> Suggestions
 corrSuggest x = mapHashSet (const 1) $ HM.lookupDefault HS.empty (CI.mk x) correctionDictionary
     where
         correctionDictionary :: CorrectionDictionary
-        correctionDictionary = unsafePerformIO $ HM.unionWith HS.union
-            <$> emnlpCorrectionDictionary "data/emnlp_dict.txt"
-            <*> utdallasCorrectionDictionary "data/utdallas.txt"
+        correctionDictionary = foldl1' (HM.unionWith HS.union)
+            [ unsafePerformIO (emnlpCorrectionDictionary "data/emnlp_dict.txt")
+            , unsafePerformIO (utdallasCorrectionDictionary "data/utdallas.txt")
+            , unsafePerformIO (smsSlangCorrectionDictionary "data/sms_slang_dict.txt")
+            ]
         {-# NOINLINE correctionDictionary #-}
 
 excludeSuggest :: T.Text -> Suggestions
@@ -207,6 +209,11 @@ emnlpCorrectionDictionary = parseDictionary toPairs
 utdallasCorrectionDictionary :: FilePath -> IO CorrectionDictionary
 utdallasCorrectionDictionary = parseDictionary toPairs
     where toPairs (_:word:xs) = (CI.mk word, HS.fromList $ filter (/= "|") xs)
+
+smsSlangCorrectionDictionary :: FilePath -> IO CorrectionDictionary
+smsSlangCorrectionDictionary path = HM.fromList . fmap (toPairs . TL.toStrict) . TL.lines . TL.decodeUtf8 <$> BL.readFile path
+    where toPairs line = (CI.mk word, HS.fromList $ T.splitOn " | " rest)
+            where (word, rest) = T.breakOn " " line
 
 parseDictionary :: (Hashable k, Eq k) => ([T.Text] -> (k, v)) -> FilePath -> IO (HM.HashMap k v)
 parseDictionary toPairs path = HM.fromList . fmap (toPairs . T.words . TL.toStrict) . TL.lines . TL.decodeUtf8 <$> BL.readFile path
